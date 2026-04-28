@@ -84,6 +84,14 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [staffData, setStaffData] = useState(staff);
   const [authToken, setAuthToken] = useState(token);
   const [showConfirmLogout, setShowConfirmLogout] = useState(false);
+  
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info' as 'success' | 'error' | 'warning' | 'info' | 'confirm',
+  });
 
   const scale = useSharedValue(1);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -265,11 +273,27 @@ const HomeScreen = ({ navigation, route }: any) => {
           fetchSessionStatus();
         }
       } else {
-        Alert.alert('Error', json.message || 'Operation failed');
+        // Clean up professional message
+        let msg = json.message || 'Operation failed';
+        if (msg.includes('Midnight to Midnight')) {
+          msg = 'Daily shift limit reached. You can only clock in once per day. Please contact your manager for assistance.';
+        }
+        
+        setAlertConfig({
+          visible: true,
+          title: 'Shift Limit',
+          message: msg,
+          type: 'warning',
+        });
       }
     } catch (err) {
       console.warn('Clock toggle error:', err);
-      Alert.alert('Connection Error', 'Could not connect to the server.');
+      setAlertConfig({
+        visible: true,
+        title: 'Connection Error',
+        message: 'Unable to connect to the server. Please check your internet.',
+        type: 'error',
+      });
     } finally {
       setClockLoading(false);
     }
@@ -279,7 +303,12 @@ const HomeScreen = ({ navigation, route }: any) => {
   const handleClockToggle = async () => {
     if (clockLoading) return;
     if (!authToken) {
-      Alert.alert('Error', 'Authentication token missing. Please log in again.');
+      setAlertConfig({
+        visible: true,
+        title: 'Error',
+        message: 'Authentication token missing. Please log in again.',
+        type: 'error',
+      });
       return;
     }
 
@@ -475,6 +504,15 @@ const HomeScreen = ({ navigation, route }: any) => {
         cancelText="Cancel"
         onClose={() => setShowConfirmLogout(false)}
         onConfirm={performClockAction}
+      />
+
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText="OK"
+        onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
       />
     </View>
   );
