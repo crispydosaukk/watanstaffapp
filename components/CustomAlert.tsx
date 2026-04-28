@@ -96,7 +96,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity onPress={onClose} style={styles.button}>
+            <TouchableOpacity onPress={onClose} style={[styles.button, { width: '100%' }]}>
               <Text style={styles.buttonText}>{confirmText}</Text>
             </TouchableOpacity>
           )}

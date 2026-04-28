@@ -54,15 +54,17 @@ const formatTime = (date: Date): string => {
 };
 
 const formatDuration = (minutes: number): string => {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const absMin = Math.max(0, minutes);
+  const h = Math.floor(absMin / 60);
+  const m = absMin % 60;
   return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
 };
 
 const minutesBetween = (from: string | Date, to: Date): number => {
   const start = new Date(from).getTime();
   const end = to.getTime();
-  return Math.floor((end - start) / 60000);
+  const diff = Math.floor((end - start) / 60000);
+  return Math.max(0, diff);
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -76,6 +78,7 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [activeSession, setActiveSession] = useState<any>(null);
   const [shiftMinutes, setShiftMinutes] = useState(0);
   const [yesterdayLog, setYesterdayLog] = useState<any[]>([]);
+  const [todayLog, setTodayLog] = useState<any[]>([]);
   const [currentLocation, setCurrentLocation] = useState('Detecting location...');
   const [greeting, setGreeting] = useState(getGreeting());
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -106,12 +109,13 @@ const HomeScreen = ({ navigation, route }: any) => {
   }, []);
 
   // ── Shift duration live timer ──
-  const startTimer = useCallback((clockInTime: string) => {
+  const startTimer = useCallback((clockInTime: string, previousMinutes: number = 0) => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setShiftMinutes(minutesBetween(clockInTime, new Date()));
-    timerRef.current = setInterval(() => {
-      setShiftMinutes(minutesBetween(clockInTime, new Date()));
-    }, 60000);
+    const updateTime = () => {
+      setShiftMinutes(previousMinutes + minutesBetween(clockInTime, new Date()));
+    };
+    updateTime();
+    timerRef.current = setInterval(updateTime, 60000);
   }, []);
 
   const stopTimer = useCallback(() => {
@@ -154,16 +158,21 @@ const HomeScreen = ({ navigation, route }: any) => {
       const json = await res.json();
       console.log('[Home] Session status response:', json);
       if (json.status === 1) {
-        const { activeSession: session, yesterdayLog: yLog } = json.data;
+        const { activeSession: session, yesterdayLog: yLog, todayLog: tLog } = json.data;
         setYesterdayLog(yLog || []);
+        setTodayLog(tLog || []);
+        
+        const previousMinutes = (tLog || []).reduce((sum: number, s: any) => sum + (s.total_minutes || 0), 0);
+        
         if (session) {
           setActiveSession(session);
           setIsClockedIn(true);
-          startTimer(session.clock_in);
+          startTimer(session.clock_in, previousMinutes);
         } else {
           setIsClockedIn(false);
           setActiveSession(null);
           stopTimer();
+          setShiftMinutes(previousMinutes);
         }
       }
     } catch (err) {
@@ -260,13 +269,16 @@ const HomeScreen = ({ navigation, route }: any) => {
 
       if (json.status === 1) {
         if (!isClockedIn) {
-          // Clock IN Success
+          // CLOCK IN Success
           const session = json.data;
           setActiveSession(session);
           setIsClockedIn(true);
-          startTimer(session.clock_in);
+          
+          // Calculate previous minutes from today's log before starting timer
+          const previousMinutes = todayLog.reduce((sum: number, s: any) => sum + (s.total_minutes || 0), 0);
+          startTimer(session.clock_in, previousMinutes);
         } else {
-          // Clock OUT Success
+          // CLOCK OUT Success
           setIsClockedIn(false);
           setActiveSession(null);
           stopTimer();
@@ -276,12 +288,12 @@ const HomeScreen = ({ navigation, route }: any) => {
         // Clean up professional message
         let msg = json.message || 'Operation failed';
         if (msg.includes('Midnight to Midnight')) {
-          msg = 'Daily shift limit reached. You can only clock in once per day. Please contact your manager for assistance.';
+          msg = 'Daily shift limit reached. You can only CLOCK IN once per day. Please contact your manager for assistance.';
         }
         
         setAlertConfig({
           visible: true,
-          title: 'Shift Limit',
+          title: 'SHIFT LIMIT',
           message: msg,
           type: 'warning',
         });
@@ -290,7 +302,7 @@ const HomeScreen = ({ navigation, route }: any) => {
       console.warn('Clock toggle error:', err);
       setAlertConfig({
         visible: true,
-        title: 'Connection Error',
+        title: 'CONNECTION ERROR',
         message: 'Unable to connect to the server. Please check your internet.',
         type: 'error',
       });
@@ -305,7 +317,7 @@ const HomeScreen = ({ navigation, route }: any) => {
     if (!authToken) {
       setAlertConfig({
         visible: true,
-        title: 'Error',
+        title: 'ERROR',
         message: 'Authentication token missing. Please log in again.',
         type: 'error',
       });
@@ -338,7 +350,7 @@ const HomeScreen = ({ navigation, route }: any) => {
   })();
 
   // ── Shift card label ──
-  const shiftLabel = isClockedIn ? 'Shift duration:' : 'Clock-in time:';
+  const shiftLabel = isClockedIn ? 'SHIFT DURATION:' : 'CLOCK-IN TIME:';
   const shiftValue = isClockedIn
     ? formatDuration(shiftMinutes)
     : activeSession?.clock_in
@@ -390,7 +402,7 @@ const HomeScreen = ({ navigation, route }: any) => {
             </View>
             <View style={[styles.statusBadge, { backgroundColor: isClockedIn ? '#10B981' : '#64748B' }]}>
               <View style={styles.statusDot} />
-              <Text style={styles.statusText}>{isClockedIn ? 'On duty' : 'Off duty'}</Text>
+              <Text style={styles.statusText}>{isClockedIn ? 'ON DUTY' : 'OFF DUTY'}</Text>
             </View>
           </View>
           
@@ -401,7 +413,7 @@ const HomeScreen = ({ navigation, route }: any) => {
             </View>
             {isClockedIn && activeSession?.clock_in && (
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.startTimeLabel}>Clocked in at:</Text>
+                <Text style={styles.startTimeLabel}>CLOCKED IN AT:</Text>
                 <Text style={styles.startTimeValue}>{formatTime(new Date(activeSession.clock_in))}</Text>
               </View>
             )}
@@ -423,7 +435,7 @@ const HomeScreen = ({ navigation, route }: any) => {
           >
             <Text style={{ fontSize: 50 }}>{isClockedIn ? '⏹️' : '▶️'}</Text>
             <Text style={styles.clockActionText}>
-              {clockLoading ? 'Wait...' : (isClockedIn ? 'Clock\nout' : 'Clock\nin')}
+              {clockLoading ? 'WAIT...' : (isClockedIn ? 'CLOCK\nOUT' : 'CLOCK\nIN')}
             </Text>
           </TouchableOpacity>
         </Animated.View>
@@ -431,7 +443,7 @@ const HomeScreen = ({ navigation, route }: any) => {
         <View style={styles.clockStatusContainer}>
           <View style={[styles.clockStatusDot, isClockedIn && styles.clockStatusDotActive]} />
           <Text style={styles.clockStatusText}>
-            {isClockedIn ? 'Currently clocked in' : 'Ready to start'}
+            {isClockedIn ? 'CURRENTLY CLOCKED IN' : 'READY TO START'}
           </Text>
         </View>
         <Text style={styles.clockHint}>
@@ -450,7 +462,7 @@ const HomeScreen = ({ navigation, route }: any) => {
             <View style={styles.logItem}>
               <View style={[styles.logDot, { backgroundColor: '#10B981' }]} />
               <View>
-                <Text style={styles.logLabelSmall}>In</Text>
+                <Text style={styles.logLabelSmall}>IN</Text>
                 <Text style={styles.logValue}>{yesterdayIn}</Text>
               </View>
             </View>
@@ -458,7 +470,7 @@ const HomeScreen = ({ navigation, route }: any) => {
             <View style={styles.logItem}>
               <View style={[styles.logDot, { backgroundColor: '#EF4444' }]} />
               <View>
-                <Text style={styles.logLabelSmall}>Out</Text>
+                <Text style={styles.logLabelSmall}>OUT</Text>
                 <Text style={styles.logValue}>{yesterdayOut}</Text>
               </View>
             </View>
@@ -466,7 +478,7 @@ const HomeScreen = ({ navigation, route }: any) => {
             <View style={styles.logItem}>
               <View style={[styles.logDot, { backgroundColor: '#D0B079' }]} />
               <View>
-                <Text style={styles.logLabelSmall}>Total</Text>
+                <Text style={styles.logLabelSmall}>TOTAL</Text>
                 <Text style={styles.logValue}>
                   {yesterdayTotal > 0 ? formatDuration(yesterdayTotal) : '--'}
                 </Text>
@@ -497,11 +509,11 @@ const HomeScreen = ({ navigation, route }: any) => {
 
       <CustomAlert
         visible={showConfirmLogout}
-        title="Clock Out"
+        title="CLOCK OUT"
         message="Are you sure you want to end your shift for today?"
         type="confirm"
-        confirmText="Yes, Clock Out"
-        cancelText="Cancel"
+        confirmText="CONFIRM"
+        cancelText="CANCEL"
         onClose={() => setShowConfirmLogout(false)}
         onConfirm={performClockAction}
       />
