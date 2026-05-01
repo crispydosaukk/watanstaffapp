@@ -24,10 +24,6 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import Animated, { 
-  FadeInDown, 
-  FadeInRight, 
-  Layout, 
-  FadeOutLeft, 
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -163,9 +159,6 @@ const NotificationScreen = ({ navigation }: any) => {
 
     return (
       <Animated.View 
-        entering={FadeInRight.delay(index * 50).duration(400)}
-        exiting={FadeOutLeft.duration(300)}
-        layout={Layout.springify()}
         style={[styles.notificationCard, { borderColor: borderColor }]}
       >
         <View style={styles.cardHeader}>
@@ -287,7 +280,6 @@ const NotificationScreen = ({ navigation }: any) => {
           />
         ) : (
           <Animated.View 
-            entering={FadeInDown}
             style={styles.centerContainer}
           >
             <View style={styles.emptyIconWrapper}>

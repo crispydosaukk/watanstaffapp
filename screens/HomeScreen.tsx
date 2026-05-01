@@ -13,15 +13,13 @@ import {
   Pressable,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Bell, Info, AlertTriangle, X, ChevronRight } from 'lucide-react-native';
-import Animated, {
-  FadeInUp,
-  FadeInDown,
+import { Bell, AlertTriangle, ChevronRight } from 'lucide-react-native';
+import Animated from 'react-native-reanimated';
+import {
   useAnimatedStyle,
   withSpring,
   withTiming,
   useSharedValue,
-  withDelay,
 } from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -100,6 +98,24 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [clockLoading, setClockLoading] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
+  const pulse = useSharedValue(1);
+
+  useEffect(() => {
+    if (clockLoading) {
+      pulse.value = withTiming(1.05, { duration: 800 });
+      const interval = setInterval(() => {
+        pulse.value = pulse.value === 1 ? withTiming(1.05, { duration: 800 }) : withTiming(1, { duration: 800 });
+      }, 800);
+      return () => clearInterval(interval);
+    } else {
+      pulse.value = withSpring(1);
+    }
+  }, [clockLoading]);
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
+  }));
+
   const [staffData, setStaffData] = useState(staff);
   const lastLocation = useRef<any>(null);
   const locationWatchId = useRef<number | null>(null);
@@ -107,6 +123,10 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeBanner, setActiveBanner] = useState<any>(null);
   const bannerY = useSharedValue(-150);
+  const bannerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: bannerY.value }],
+    opacity: withTiming(bannerY.value > -100 ? 1 : 0),
+  }));
 
 
   const [alertConfig, setAlertConfig] = useState({
@@ -263,7 +283,7 @@ const HomeScreen = ({ navigation, route }: any) => {
     unsubNotif = onSnapshot(qNotif, (snapshot) => {
       const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       allNotificationsRef.current = docs;
-      
+
       // 1. Calculate Unread Count (Only for released/pending items)
       const visibleUnread = docs.filter((n: any) => {
         if (n.read) return false;
@@ -282,7 +302,7 @@ const HomeScreen = ({ navigation, route }: any) => {
           if (shownNotifIds.has(latest.id)) return;
 
           const isPast = latest.scheduled_for ? (latest.scheduled_for.toDate ? latest.scheduled_for.toDate().getTime() : new Date(latest.scheduled_for).getTime()) <= Date.now() : true;
-          
+
           if (latest.status === 'pending' || (latest.status === 'scheduled' && isPast)) {
             setActiveBanner(latest);
             shownNotifIds.add(latest.id);
@@ -297,19 +317,19 @@ const HomeScreen = ({ navigation, route }: any) => {
     releaseMonitor = setInterval(() => {
       // Safely access the current list of notifications from our Ref
       const currentNotifs = allNotificationsRef.current || [];
-      
+
       currentNotifs.forEach((n: any) => {
         // Only trigger if it's scheduled, has a time, hasn't been shown, and IS DUE NOW
         if (n.status === 'scheduled' && n.scheduled_for && !shownNotifIds.has(n.id)) {
           const sTime = n.scheduled_for.toDate ? n.scheduled_for.toDate().getTime() : new Date(n.scheduled_for).getTime();
-          
+
           if (Date.now() >= sTime) {
             // RELEASE IT: Show banner and add to shown list
             setActiveBanner(n);
             shownNotifIds.add(n.id);
             bannerY.value = withSpring(16, { damping: 15 });
             setTimeout(() => { bannerY.value = withTiming(-150); }, 5000);
-            
+
             // Instantly update the unread count so the badge on the bell icon refreshes
             const unread = currentNotifs.filter((item: any) => {
               if (item.read) return false;
@@ -425,8 +445,8 @@ const HomeScreen = ({ navigation, route }: any) => {
     const Δλ = (lon2 - lon1) * Math.PI / 180;
 
     const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      Math.cos(φ1) * Math.cos(φ2) *
+      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c; // Distance in meters
@@ -434,7 +454,7 @@ const HomeScreen = ({ navigation, route }: any) => {
 
   const performClockAction = async () => {
     if (clockLoading || !staffData) return;
-    
+
     console.log("[Clock] Staff Data Debug:", staffData);
 
     const staffId = staffData.id || staffData.uid;
@@ -444,44 +464,43 @@ const HomeScreen = ({ navigation, route }: any) => {
     }
 
     setClockLoading(true);
-    setProcessingStep('Acquiring GPS...');
-
-    const now = new Date();
+    setProcessingStep('📡 GPS Fetching...');
 
     try {
-      // START PARALLEL TASKS: GPS and Restaurant Data
-      const restaurantDataPromise = !isClockedIn && staffData.restaurant_id 
+      // START PARALLEL TASKS: GPS and Restaurant Data (needed for both clock-in and clock-out)
+      const restaurantDataPromise = staffData.restaurant_id
         ? getDoc(doc(db, "restaurants", staffData.restaurant_id))
         : Promise.resolve(null);
 
-      // 1. GET GPS POSITION (OPTIMIZED 3-TIER)
+      // 1. GET GPS POSITION (OPTIMIZED)
       const position: any = await (async () => {
-        // Tier 0: Instant check of our internal background cache (< 1 min old)
-        if (lastLocation.current && (Date.now() - lastLocation.current.timestamp) < 60000) {
+        // Tier 0: Instant check of our internal background cache (< 30s old)
+        if (lastLocation.current && (Date.now() - lastLocation.current.timestamp) < 30000) {
           return lastLocation.current;
         }
 
         return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("Timeout")), 3000);
+          const timer = setTimeout(() => reject(new Error("Timeout")), 2000);
           Geolocation.getCurrentPosition(
             (pos) => { clearTimeout(timer); resolve(pos); },
             (err) => { clearTimeout(timer); reject(err); },
-            { enableHighAccuracy: true, timeout: 2500, maximumAge: 60000 }
+            { enableHighAccuracy: true, timeout: 1500, maximumAge: 30000 }
           );
         }).catch(() => {
-          // Tier 2: Try 8s High Accuracy
+          setProcessingStep('🔄 Retrying GPS...');
+          // Tier 2: Try 6s High Accuracy
           return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error("Timeout")), 9000);
+            const timer = setTimeout(() => reject(new Error("Timeout")), 7000);
             Geolocation.getCurrentPosition(
               (pos) => { clearTimeout(timer); resolve(pos); },
               (err) => { clearTimeout(timer); reject(err); },
-              { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+              { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
             );
           });
         });
       })().catch(() => {
+        setProcessingStep('⏳ Improving Signal...');
         // Tier 3: Try 10s Balanced Accuracy
-        setProcessingStep('Improving GPS signal...');
         return new Promise((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error("Timeout")), 12000);
           Geolocation.getCurrentPosition(
@@ -496,33 +515,34 @@ const HomeScreen = ({ navigation, route }: any) => {
       });
 
       const { latitude: curLat, longitude: curLng } = position.coords;
-      setProcessingStep('Verifying zone...');
+      setProcessingStep('✅ Location Found');
 
-      // 2. GEOFENCING (Only for Clock-In)
+      // 2. GEOFENCING (Clock-In AND Clock-Out)
       let distance = 0;
-      if (!isClockedIn) {
-        if (!staffData.restaurant_id) throw new Error("You are not assigned to any restaurant.");
+      if (!staffData.restaurant_id) throw new Error("You are not assigned to any restaurant.");
 
-        const restDoc: any = await restaurantDataPromise;
-        if (!restDoc?.exists()) throw new Error("Restaurant profile not found in database.");
+      const restDoc: any = await restaurantDataPromise;
+      if (!restDoc?.exists()) throw new Error("Restaurant profile not found in database.");
 
-        const restData = restDoc.data();
-        const restLat = parseFloat(restData.latitude);
-        const restLng = parseFloat(restData.longitude);
+      const restData = restDoc.data();
+      const restLat = parseFloat(restData.latitude);
+      const restLng = parseFloat(restData.longitude);
 
-        if (isNaN(restLat) || isNaN(restLng)) throw new Error("Restaurant location is not set in dashboard.");
+      if (isNaN(restLat) || isNaN(restLng)) throw new Error("Restaurant location is not set in dashboard.");
 
-        distance = calculateDistance(curLat, curLng, restLat, restLng);
-        // Allow 100m buffer for GPS drift
-        if (distance > 100) {
-          throw new Error(`Out of Range: You are ${Math.round(distance)}m away from ${restData.restaurant_name}. Please move within 100m to clock in.`);
-        }
+      distance = calculateDistance(curLat, curLng, restLat, restLng);
+      // Allow 100m buffer for GPS drift
+      if (distance > 100) {
+        const action = isClockedIn ? 'clock out' : 'clock in';
+        throw new Error(`Out of Range: You are ${Math.round(distance)}m away from ${restData.restaurant_name}. Please move within 100m to ${action}.`);
       }
 
-      setProcessingStep('Saving to server...');
-
       // 3. DATABASE SAVE
+      setProcessingStep('💾 Saving...');
       const locString = currentLocation || `${curLat.toFixed(4)}, ${curLng.toFixed(4)}`;
+
+      const now = new Date();
+      const staffId = staffData.id || staffData.uid;
 
       if (!isClockedIn) {
         await addDoc(collection(db, "attendance"), {
@@ -535,25 +555,27 @@ const HomeScreen = ({ navigation, route }: any) => {
           location_in: locString,
           distance_m: Math.round(distance)
         });
+        setProcessingStep('🎉 Clocked In!');
         setAlertConfig({ visible: true, title: 'SUCCESS', message: 'Location verified. You have successfully clocked in!', type: 'success' });
       } else {
         if (!activeSession?.id) throw new Error("No active session found to clock out.");
-        
+
         const cinDate = activeSession.clock_in?.toDate ? activeSession.clock_in.toDate() : new Date(activeSession.clock_in);
-        const diffMin = Math.floor((now.getTime() - cinDate.getTime()) / 60000);
+        const diffMin = Math.max(1, Math.round((now.getTime() - cinDate.getTime()) / 60000));
 
         await updateDoc(doc(db, "attendance", activeSession.id), {
           clock_out: serverTimestamp(),
           total_minutes: Math.max(0, diffMin),
           location_out: locString
         });
+        setProcessingStep('🎉 Clocked Out!');
         setShowConfirmLogout(false);
         setAlertConfig({ visible: true, title: 'SUCCESS', message: 'You have successfully clocked out. Great work today!', type: 'success' });
       }
     } catch (err: any) {
       console.error("[Clock Toggle Error]:", err);
       const isOutOfRange = err?.message?.includes("Out of Range");
-      
+
       setAlertConfig({
         visible: true,
         title: isOutOfRange ? 'OUT OF RANGE' : 'ACTION FAILED',
@@ -561,7 +583,10 @@ const HomeScreen = ({ navigation, route }: any) => {
         type: isOutOfRange ? 'warning' : 'error',
       });
     } finally {
-      setClockLoading(false);
+      setTimeout(() => {
+        setClockLoading(false);
+        setProcessingStep('');
+      }, 800);
     }
   };
 
@@ -610,17 +635,14 @@ const HomeScreen = ({ navigation, route }: any) => {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
       {/* CUSTOM NOTIFICATION BANNER */}
-      <Animated.View 
+      <Animated.View
         style={[
-          styles.notificationBanner, 
+          styles.notificationBanner,
           { top: insets.top + 8 },
-          useAnimatedStyle(() => ({
-            transform: [{ translateY: bannerY.value }],
-            opacity: withTiming(bannerY.value > -100 ? 1 : 0)
-          }))
+          bannerAnimatedStyle,
         ]}
       >
-        <Pressable 
+        <Pressable
           style={styles.bannerContent}
           onPress={() => {
             bannerY.value = withTiming(-150);
@@ -657,7 +679,7 @@ const HomeScreen = ({ navigation, route }: any) => {
           </View>
         </View>
         <View style={styles.headerIcons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.iconButton}
             onPress={() => navigation.navigate('Notification')}
           >
@@ -683,7 +705,7 @@ const HomeScreen = ({ navigation, route }: any) => {
         </View>
       </View>
 
-      <Animated.View entering={FadeInDown.delay(200).duration(800)}>
+      <Animated.View>
         <LinearGradient colors={['#D0B079', '#B8965E']} style={styles.shiftCard}>
           <View style={styles.shiftHeader}>
             <View style={styles.todayBadge}>
@@ -712,21 +734,27 @@ const HomeScreen = ({ navigation, route }: any) => {
 
       <View style={styles.clockSection}>
         <View style={styles.clockCenterContainer}>
-          <View style={styles.clockOuterRing}>
+          <Animated.View style={[styles.clockOuterRing, animatedButtonStyle]}>
             <TouchableOpacity
               style={[styles.clockButton, isClockedIn ? styles.clockButtonOut : styles.clockButtonIn]}
               onPress={handleClockToggle}
               activeOpacity={0.7}
               disabled={clockLoading}
             >
-              <Text style={{ fontSize: 50 }}>
-                {isClockedIn ? '⏹️' : '▶️'}
-              </Text>
-              <Text style={styles.clockActionText}>
-                {clockLoading ? (processingStep || 'PROCESSING...') : (isClockedIn ? 'CLOCK\nOUT' : 'CLOCK\nIN')}
-              </Text>
+              {clockLoading ? (
+                <Text style={styles.clockStepText}>{processingStep}</Text>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 44 }}>
+                    {isClockedIn ? '⏹️' : '▶️'}
+                  </Text>
+                  <Text style={styles.clockActionText}>
+                    {isClockedIn ? 'CLOCK\nOUT' : 'CLOCK\nIN'}
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
 
         <View style={styles.clockStatusContainer}>
@@ -741,7 +769,7 @@ const HomeScreen = ({ navigation, route }: any) => {
       </View>
 
       <View style={styles.bottomSection}>
-        <Animated.View entering={FadeInUp.delay(500)} style={styles.yesterdayCard}>
+        <Animated.View style={styles.yesterdayCard}>
           <View style={styles.yesterdayHeader}>
             <Text style={styles.yesterdayTitle}>Yesterday's log</Text>
             <Text style={styles.yesterdayDate}>{yesterdayDateStr}</Text>
@@ -844,6 +872,7 @@ const styles = StyleSheet.create({
   clockButtonIn: { backgroundColor: '#10B981' },
   clockButtonOut: { backgroundColor: '#EF4444' },
   clockActionText: { color: 'white', fontSize: 13, fontWeight: '900', textAlign: 'center', marginTop: 6, letterSpacing: 1 },
+  clockStepText: { color: 'white', fontSize: 11, fontWeight: '700', textAlign: 'center', paddingHorizontal: 10, letterSpacing: 0.5 },
   clockStatusContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   clockStatusDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#94A3B8', marginRight: 6 },
   clockStatusDotActive: { backgroundColor: '#10B981' },

@@ -81,7 +81,7 @@ function App() {
             initialRouteName={initialRoute}
             screenOptions={{
               headerShown: false,
-              animation: 'slide_from_right',
+              animation: 'none',
             }}
           >
             <Stack.Screen name="Login" component={LoginScreen} />

@@ -38,11 +38,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
 
   React.useEffect(() => {
     if (visible) {
-      Animated.spring(scale, {
-        toValue: 1,
-        friction: 5,
-        useNativeDriver: true,
-      }).start();
+      scale.setValue(1);
     } else {
       scale.setValue(0);
     }
@@ -71,7 +67,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
   };
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
       <TouchableOpacity 
         style={styles.overlay} 
         activeOpacity={1} 

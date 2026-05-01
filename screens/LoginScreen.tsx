@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { staffLogin } from '../api/staffAuth';
 import CustomAlert from '../components/CustomAlert';
@@ -58,21 +58,21 @@ const LoginScreen = ({ navigation }: any) => {
       const result = await staffLogin(email, password);
       setLoading(false);
 
-      if (result.status === 1) {
+      if (result.status === 1 && result.data) {
         showAlert('Success', 'Login successful! Welcome back.', 'success');
         
         // Save staff data and token to AsyncStorage
         const staffObj = result.data;
         await AsyncStorage.setItem('staffData', JSON.stringify(staffObj));
-        await AsyncStorage.setItem('staffToken', result.data.token);
+        await AsyncStorage.setItem('staffToken', staffObj.token);
 
         setTimeout(() => {
           setAlertConfig(prev => ({ ...prev, visible: false }));
           navigation.reset({
             index: 0,
-            routes: [{ name: 'Home', params: { staff: staffObj, token: result.data.token } }],
+            routes: [{ name: 'Home', params: { staff: staffObj, token: staffObj.token } }],
           });
-        }, 1500);
+        }, 500);
 
       } else {
         showAlert('Access Denied', result.message || 'Invalid credentials provided.', 'error');
@@ -98,7 +98,7 @@ const LoginScreen = ({ navigation }: any) => {
         >
           <View style={styles.headerContent}>
             {/* Logo Wrapper */}
-            <Animated.View entering={FadeInDown.delay(200).duration(800)} style={styles.logoWrapper}>
+            <Animated.View style={styles.logoWrapper}>
               <Image 
                 source={require('../public/watanstafflogo.png')} 
                 style={styles.logoImage}
@@ -107,7 +107,7 @@ const LoginScreen = ({ navigation }: any) => {
             </Animated.View>
 
             {/* App Branding - Perfectly Centered */}
-            <Animated.View entering={FadeInDown.delay(400).duration(800)} style={styles.brandingContainer}>
+            <Animated.View style={styles.brandingContainer}>
               <View style={styles.titleRow}>
                 <Text style={{ fontSize: 24, marginRight: 8 }}>🕒</Text>
                 <Text style={styles.appName}>WatanStaff</Text>
@@ -119,7 +119,6 @@ const LoginScreen = ({ navigation }: any) => {
 
         {/* Login Card */}
         <Animated.View 
-          entering={FadeInUp.delay(500).duration(1000)} 
           style={styles.formContainer}
         >
           <Text style={styles.welcomeTitle}>Sign in to your account</Text>

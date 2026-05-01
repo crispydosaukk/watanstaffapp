@@ -8,7 +8,7 @@ import {
   Image,
   Dimensions,
 } from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -63,7 +63,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
 
       <View style={[styles.mainContent, { paddingBottom: insets.bottom + 10 }]}>
         {/* Profile Card */}
-        <Animated.View entering={FadeInUp.duration(600)} style={styles.profileCard}>
+        <Animated.View style={styles.profileCard}>
           <View style={styles.profileContent}>
             <View style={styles.avatarContainer}>
               {staff?.profile_image ? (
@@ -107,7 +107,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
         </View>
 
         {/* Details Section */}
-        <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.detailsCard}>
+        <Animated.View style={styles.detailsCard}>
           <View style={styles.detailsHeader}>
             <View style={styles.detailsHeaderLeft}>
               <View style={styles.iconCircle}>
@@ -136,7 +136,7 @@ const ProfileScreen = ({ navigation, route }: any) => {
         </Animated.View>
 
         {/* Logout Button */}
-        <Animated.View entering={FadeInUp.delay(300).duration(600)} style={styles.logoutContainer}>
+        <Animated.View style={styles.logoutContainer}>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Text style={styles.logoutIcon}>🚪</Text>
             <Text style={styles.logoutText}>Log Out</Text>
