@@ -1,4 +1,7 @@
 {
   "name": "WatanStaff",
-  "displayName": "WatanStaff"
+  "displayName": "WatanStaff",
+  "ios": {
+    "bundleIdentifier": "com.watanstaff.app"
+  }
 }
