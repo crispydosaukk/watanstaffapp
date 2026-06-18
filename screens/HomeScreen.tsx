@@ -91,18 +91,8 @@ const calcSessionMinutes = (record: any): number => {
   return 0;
 };
 
-const getAutoLogoutTime = (clockIn: Date): Date => {
-  const hour = clockIn.getHours();
-  const logoutTime = new Date(clockIn.getTime());
-
-  if (hour >= 0 && hour < 18) {
-    // Clocked in between 00:00 and 17:59 -> Auto logout at next midnight
-    logoutTime.setHours(24, 0, 0, 0);
-  } else {
-    // Clocked in between 18:00 and 23:59 -> Auto logout at next 18:00 (6 PM)
-    logoutTime.setDate(logoutTime.getDate() + 1);
-    logoutTime.setHours(18, 0, 0, 0);
-  }
+const getAutoLogoutTime = (clockIn: Date, autoLogoutHours: number = 15): Date => {
+  const logoutTime = new Date(clockIn.getTime() + autoLogoutHours * 60 * 60 * 1000);
   return logoutTime;
 };
 
@@ -119,6 +109,7 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [currentLocation, setCurrentLocation] = useState('Detecting location...');
   const [greeting, setGreeting] = useState(getGreeting());
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [restaurantData, setRestaurantData] = useState<any>(null);
   const [clockLoading, setClockLoading] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
   const pulse = useSharedValue(1);
@@ -204,6 +195,7 @@ const HomeScreen = ({ navigation, route }: any) => {
     let unsubProfile: (() => void) | undefined;
     let unsubAttendance: (() => void) | undefined;
     let unsubNotif: (() => void) | undefined;
+    let unsubRestaurant: (() => void) | undefined;
     let releaseMonitor: any;
 
     // Staff Profile Real-time Sync
@@ -215,6 +207,15 @@ const HomeScreen = ({ navigation, route }: any) => {
         AsyncStorage.setItem('staffData', JSON.stringify(updatedData));
       }
     }, (err) => console.error("[Home] Profile sync error:", err));
+
+    // Restaurant profile listener for dynamic geofence radius and auto logout hours
+    if (staffData?.restaurant_id) {
+      unsubRestaurant = onSnapshot(doc(db, "restaurants", staffData.restaurant_id), (restSnap) => {
+        if (restSnap.exists()) {
+          setRestaurantData(restSnap.data());
+        }
+      });
+    }
 
     if (!auth.currentUser) {
       console.warn("[Home] No Firebase Auth session. Redirecting...");
@@ -269,7 +270,10 @@ const HomeScreen = ({ navigation, route }: any) => {
 
       if (active) {
         const cinDate = active.clock_in?.toDate ? active.clock_in.toDate() : new Date(active.clock_in);
-        const autoLogout = getAutoLogoutTime(cinDate);
+        const autoHours = restaurantData?.auto_logout_hours !== undefined 
+          ? parseFloat(restaurantData.auto_logout_hours) 
+          : 15;
+        const autoLogout = getAutoLogoutTime(cinDate, autoHours);
         const now = new Date();
 
         if (now >= autoLogout) {
@@ -410,6 +414,7 @@ const HomeScreen = ({ navigation, route }: any) => {
       if (unsubProfile) unsubProfile();
       if (unsubAttendance) unsubAttendance();
       if (unsubNotif) unsubNotif();
+      if (unsubRestaurant) unsubRestaurant();
       if (releaseMonitor) clearInterval(releaseMonitor);
     };
 
@@ -591,10 +596,13 @@ const HomeScreen = ({ navigation, route }: any) => {
       if (isNaN(restLat) || isNaN(restLng)) throw new Error("Restaurant location is not set in dashboard.");
 
       distance = calculateDistance(curLat, curLng, restLat, restLng);
-      // Allow 50m buffer for GPS drift
-      if (distance > 50) {
+      
+      // Allow dynamic geofence radius from restaurant data, default to 50m
+      const allowedRadius = restData.geofence_radius !== undefined ? parseFloat(restData.geofence_radius) : 50;
+
+      if (distance > allowedRadius) {
         const action = isClockedIn ? 'clock out' : 'clock in';
-        throw new Error(`Out of Range: You are ${Math.round(distance)}m away from ${restData.restaurant_name}. Please move within 50m to ${action}.`);
+        throw new Error(`Out of Range: You are ${Math.round(distance)}m away from ${restData.restaurant_name}. Please move within ${Math.round(allowedRadius)}m to ${action}.`);
       }
 
       // 3. DATABASE SAVE
@@ -669,7 +677,7 @@ const HomeScreen = ({ navigation, route }: any) => {
   const yesterdayOut = yesterdayLog.length > 0 && yesterdayLog[0].clock_out
     ? formatTime(yesterdayLog[0].clock_out)
     : '--';
-  const yesterdayTotal = yesterdayLog.reduce((sum: number, r: any) => sum + calcSessionMinutes(r), 0);
+  const yesterdayTotal = yesterdayLog.reduce((sum: number, r: any) => sum + (r.total_minutes != null ? r.total_minutes : calcSessionMinutes(r)), 0);
   const yesterdayDateStr = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
