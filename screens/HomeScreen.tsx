@@ -674,8 +674,10 @@ const HomeScreen = ({ navigation, route }: any) => {
   const yesterdayIn = yesterdayLog.length > 0 && yesterdayLog[yesterdayLog.length - 1].clock_in
     ? formatTime(yesterdayLog[yesterdayLog.length - 1].clock_in)
     : '--';
-  const yesterdayOut = yesterdayLog.length > 0 && yesterdayLog[0].clock_out
-    ? formatTime(yesterdayLog[0].clock_out)
+  const yesterdayOutRecord = yesterdayLog.length > 0 ? yesterdayLog[0] : null;
+  const isAutoLogout = yesterdayOutRecord?.location_out === "System Auto-Logout" && (!yesterdayOutRecord?.edit_reason || yesterdayOutRecord.edit_reason.trim() === "");
+  const yesterdayOut = yesterdayOutRecord?.clock_out
+    ? (isAutoLogout ? '--' : formatTime(yesterdayOutRecord.clock_out))
     : '--';
   const yesterdayTotal = yesterdayLog.reduce((sum: number, r: any) => sum + (r.total_minutes != null ? r.total_minutes : calcSessionMinutes(r)), 0);
   const yesterdayDateStr = (() => {
@@ -817,6 +819,7 @@ const HomeScreen = ({ navigation, route }: any) => {
               <View>
                 <Text style={styles.logLabelSmall}>OUT</Text>
                 <Text style={styles.logValue}>{yesterdayOut}</Text>
+                {isAutoLogout && <Text style={{ fontSize: 8, color: '#94A3B8', fontWeight: '700', marginTop: 1 }}>(AUTO LOGOUTED)</Text>}
               </View>
             </View>
             <View style={styles.logDivider} />
